@@ -32,6 +32,7 @@ typedef struct _cache {
     pthread_rwlock_t lock;
 } cache_t;
 
+void update_seq(cache_t *cache);
 
 cache_t *cache_init();
 
@@ -42,6 +43,8 @@ cache_node_t *create_node(char *key, char *data);
 void free_node(cache_node_t *node);
 
 cache_node_t *check_cache_hit(cache_t *cache, char *key);
+
+void read_cache_data(cache_t *cache, cache_node_t *hit_addr, char *response);
 
 void write_to_cache(cache_t *cache, char *key, char *data, int size);
 

@@ -9,6 +9,7 @@
 #include "cache.h"
 
 
+
 cache_t *cache_init() {
     cache_t *cache = malloc(sizeof(cache_t));
     assert(cache != NULL);
@@ -18,6 +19,13 @@ cache_t *cache_init() {
     CHECK(pthread_rwlock_init(&cache->lock, NULL), "cache_init(): failed to init lock");
     return cache;
 }
+
+void update_seq(cache_t *cache) {
+    CHECK(pthread_rwlock_wrlock(&cache->lock), "update_seq(): failed to write-lock cache");
+    cache->timestamp_seq += 1;
+    CHECK(pthread_rwlock_unlock(&cache->lock), "update_seq(): failed to write-unlock cache");
+}
+
 
 cache_node_t *create_node(char *key, char *data) {
     cache_node_t *node = malloc(sizeof(cache_node_t));
@@ -49,6 +57,13 @@ void free_cache(cache_t *cache) {
     }
     free(cache);
 }
+
+void read_cache_data(cache_t *cache, cache_node_t *hit_addr, char *response) {
+    strcpy(response, hit_addr->data);
+    hit_addr->timestamp = cache->timestamp_seq;
+    CHECK(pthread_rwlock_unlock(&hit_addr->lock),"read_cache_data(): failed to unlock node");
+}
+
 
 cache_node_t *check_cache_hit(cache_t *cache, char *key) {
 
