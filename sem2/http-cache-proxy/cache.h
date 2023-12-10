@@ -9,11 +9,17 @@
 #include <stdint-gcc.h>
 #include "proxy_config.h"
 
-#define CACHE_KEY_SIZE URI_LENGTH
+#define CACHE_KEY_SIZE MAX_LINE_SIZE
+#define CACHE_DATA_SIZE MAX_OBJECT_SIZE
+#define MAX_CACHE_SIZE 1049000
+
+/*
+ * LRU cache
+*/
 
 typedef struct _cache_node {
     char key[CACHE_KEY_SIZE];
-    char data[MAX_OBJECT_SIZE];
+    char data[CACHE_DATA_SIZE];
     int64_t timestamp;
     pthread_rwlock_t lock;
     struct _cache_node *next;
@@ -28,11 +34,16 @@ typedef struct _cache {
 
 
 cache_t *cache_init();
+
 void free_cache(cache_t *cache);
+
 cache_node_t *create_node(char *key, char *data);
+
 void free_node(cache_node_t *node);
 
+cache_node_t *check_cache_hit(cache_t *cache, char *key);
 
+void write_to_cache(cache_t *cache, char *key, char *data, int size);
 
 
 #endif //HTTP_CACHE_PROXY_CACHE_H

@@ -18,7 +18,7 @@
   } else { break; } \
 } while (0)
 
-#define URI_LENGTH 256
+#define	MAX_LINE_SIZE	 8192
 #define MAX_OBJECT_SIZE 102400
 
 #endif //HTTP_CACHE_PROXY_PROXY_CONFIG_H
