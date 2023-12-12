@@ -16,15 +16,13 @@ typedef struct _req_content {
     int port;
 } req_content;
 
-void proxy_readln(io_buffer_t *iob, void *usrbuf);
-
-void proxy_write(int fd, void *usrbuf, size_t n);
-
 void parse_uri(char *uri, req_content *content);
 
-void client_error(int fd, char *cause, char *errnum,
-                  char *shortmsg, char *longmsg);
+void client_error(int fd, char *cause, char *err,
+                  char *msg1, char *msg2);
 
-void handle_client(cache_t *cache, int fd);
+void handle_client(cache_t *cache, int fd, io_buffer_t *io_buffer);
+
+int open_connection(char *host, int port);
 
 #endif //HTTP_CACHE_PROXY_PROXY_H

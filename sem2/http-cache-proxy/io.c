@@ -8,11 +8,14 @@
 #include <string.h>
 #include "io.h"
 
+static int relative_copy(io_buffer_t *iob, char *buf, size_t n);
+static ssize_t relative_read(io_buffer_t *iob, char *buf, size_t n);
+
 io_buffer_t *create_io_buffer(int fd) {
     io_buffer_t *buf = malloc(sizeof(io_buffer_t));
     assert(buf != NULL);
     buf->fd = fd;
-    buf->cnt = 0;
+    buf->len = 0;
     buf->bufptr = buf->buf;
     return buf;
 }
@@ -22,67 +25,96 @@ void free_io_buffer(io_buffer_t *buf) {
     free(buf);
 }
 
+ssize_t read_n(int fd, void *buf, size_t n) {
+    size_t left = n;
+    ssize_t r;
+    char *tmp = buf;
 
-static ssize_t _io_read(io_buffer_t *iob, char *usrbuf, size_t n) {
-    int cnt;
-
-    while (iob->cnt <= 0) {  /* refill if buf is empty */
-        iob->cnt = read(iob->fd, iob->buf,
-                        sizeof(iob->buf));
-        if (iob->cnt < 0) {
-            if (errno != EINTR) /* interrupted by sig handler return */
+    while (left > 0) {
+        if ((r = read(fd, tmp, left)) < 0) {
+            if (errno == EINTR) {
+                r = 0;
+            } else {
                 return -1;
-        } else if (iob->cnt == 0)  /* EOF */
-            return 0;
-        else
-            iob->bufptr = iob->buf; /* reset buffer ptr */
+            }
+        } else if (r == 0) {
+            break;
+        }
+        left -= r;
+        tmp += r;
     }
-
-    /* Copy min(n, iob->cnt) bytes from internal buf to user buf */
-    cnt = n;
-    if (iob->cnt < n)
-        cnt = iob->cnt;
-    memcpy(usrbuf, iob->bufptr, cnt);
-    iob->bufptr += cnt;
-    iob->cnt -= cnt;
-    return cnt;
+    return n - left;         /* return >= 0 */
 }
 
-ssize_t readln_b(io_buffer_t *iob, void *usrbuf, size_t maxlen) {
-    int n, rc;
-    char c, *bufp = usrbuf;
-
-    for (n = 1; n < maxlen; n++) {
-        if ((rc = _io_read(iob, &c, 1)) == 1) {
-            *bufp++ = c;
-            if (c == '\n')
-                break;
-        } else if (rc == 0) {
-            if (n == 1)
-                return 0; /* EOF, no data read */
-            else
-                break;    /* EOF, some data was read */
-        } else
-            return -1;    /* error */
+static ssize_t relative_read(io_buffer_t *iob, char *buf, size_t n) {
+    while (iob->len <= 0) {  /* refill if buf is empty */
+        iob->len = read(iob->fd, iob->buf,
+                        sizeof(iob->buf));
+        if (iob->len < 0) {
+            if (errno != EINTR) { /* interrupted by sig handler return */
+                return -1;
+            }
+        } else if (iob->len == 0) { /* EOF */
+            return 0;
+        } else {
+            iob->bufptr = iob->buf; /* reset buffer ptr */
+        }
     }
-    *bufp = 0;
+
+    /* Copy min(n, iob->len) bytes from internal buf to user buf */
+    int len = relative_copy(iob, buf, n);
+    return len;
+}
+
+static int relative_copy(io_buffer_t *iob, char *buf, size_t n) {
+    int len = n;
+    if (iob->len < n) {
+        len = iob->len;
+    }
+    memcpy(buf, iob->bufptr, len);
+    iob->bufptr += len;
+    iob->len -= len;
+    return len;
+}
+
+ssize_t readln_b(io_buffer_t *iob, void *buf, size_t len) {
+    size_t n, rc;
+    char c, *tmp = buf;
+    for (n = 1; n < len; n++) {
+        if ((rc = relative_read(iob, &c, 1)) == 1) {
+            *tmp++ = c;
+            if (c == '\n') {
+                break;
+            }
+        } else if (rc == 0) {
+            if (n == 1) {
+                return 0; /* EOF, no data read */
+            } else {
+                break;    /* EOF, some data was read */
+            }
+        } else {
+            return -1;    /* error */
+        }
+    }
+    *tmp = 0;
     return n;
 }
 
-ssize_t write_n(int fd, void *usrbuf, size_t n) {
-    size_t nleft = n;
-    ssize_t nwritten;
-    char *bufp = usrbuf;
+ssize_t write_n(int fd, void *buf, size_t n) {
+    size_t left = n;
+    ssize_t w;
+    char *tmp = buf;
 
-    while (nleft > 0) {
-        if ((nwritten = write(fd, bufp, nleft)) <= 0) {
-            if (errno == EINTR)  /* interrupted by sig handler return */
-                nwritten = 0;    /* and call write() again */
-            else
+    while (left > 0) {
+        if ((w = write(fd, tmp, left)) <= 0) {
+            if (errno == EINTR) { /* interrupted by sig handler return */
+                w = 0;    /* and call write() again */
+            } else {
                 return -1;       /* errorno set by write() */
+            }
         }
-        nleft -= nwritten;
-        bufp += nwritten;
+        left -= w;
+        tmp += w;
     }
     return n;
 }
