@@ -1,11 +1,5 @@
 #include "proxy.h"
 
-void handle_err(const char *msg) {
-    fprintf(stderr, "App error: %s. Exiting thread: %d\n", msg, gettid());
-    pthread_exit(NULL);
-}
-
-
 void init_request(request_t *req) {
     bzero(req->headers, sizeof(req->headers));
     bzero(req->version, sizeof(req->version));
@@ -34,6 +28,11 @@ void parse_uri(char *uri, url_t *content) {
         strcpy(content->path, "./");
     }
 
+}
+
+void handle_err(const char *msg) {
+    fprintf(stderr, "App error: %s. Exiting thread: %d", msg, gettid());
+    pthread_exit(NULL);
 }
 
 int open_connection(char *url) {
@@ -137,7 +136,7 @@ void *handle_request(void *arg) {
 
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
-        char err[512];
+        char err[256];
         sprintf(err, "Cannot send request to server: %s", request.url.host);
         handle_err("Cannot send request to server");
     }
@@ -210,7 +209,7 @@ int main() {
         }
         pthread_t tid;
         CHECK(
-                pthread_create(&tid, NULL, (void *) handle_request, (void *)conn ),
+                pthread_create(&tid, NULL, (void *) handle_request, (void *) conn),
                 "cannot create thread for new connection"
         );
     }
