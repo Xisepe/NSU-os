@@ -116,7 +116,10 @@ void build_byte_request(request_t *req, char *buf) {
 }
 
 void *handle_request(void *arg) {
-    CHECK(pthread_detach(pthread_self()), "Cannot detach handler thread");
+    if (pthread_detach(pthread_self())) {
+        fprintf(stderr, "Cannot detach request handler thread. Exiting thread");
+        pthread_exit(NULL);
+    }
 
     int socket_fd = (int) arg;
     char buffer[MAX_BUFFER_SIZE];
@@ -189,7 +192,7 @@ void setup_signal_handler() {
     sigemptyset(&action.sa_mask); /* block sigs of type being handled */
     action.sa_flags = SA_RESTART; /* restart syscalls if possible */
 
-    CHECK(sigaction(SIGPIPE, &action, &old_action), "failed to setup signal handler");
+    sigaction(SIGPIPE, &action, &old_action);
 }
 
 
@@ -199,6 +202,7 @@ int main() {
     if (listen_fd == -1) {
         handle_err("Cannot create socket to accept connections");
     }
+    int err;
     while (1) {
         struct sockaddr_in addr;
         int len = sizeof(addr);
@@ -208,10 +212,11 @@ int main() {
             continue;
         }
         pthread_t tid;
-        CHECK(
-                pthread_create(&tid, NULL, (void *) handle_request, (void *) conn),
-                "cannot create thread for new connection"
-        );
+        err = pthread_create(&tid, NULL, (void *) handle_request, (void *) conn);
+        if (err) {
+            fprintf(stderr,"Cannot create request handler thread");
+            close(conn);
+        }
     }
 
     return 0;
