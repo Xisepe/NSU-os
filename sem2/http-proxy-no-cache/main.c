@@ -137,7 +137,7 @@ void *handle_request(void *arg) {
 
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
-        char err[256];
+        char err[512];
         sprintf(err, "Cannot send request to server: %s", request.url.host);
         handle_err("Cannot send request to server");
     }
