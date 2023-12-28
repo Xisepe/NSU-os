@@ -9,7 +9,7 @@ void init_request(request_t *req) {
 }
 
 void finish_thread(const char *msg) {
-    fprintf(stderr, "App error: %s. Exiting thread: %d", msg, gettid());
+    fprintf(stderr, "Error message: %s\nExiting thread: %d\n", msg, gettid());
     pthread_exit(PTHREAD_CANCELED);
 }
 
@@ -127,9 +127,16 @@ void build_byte_request(request_t *req, char *buf) {
     sprintf(buf, "%s %s %s\r\n%s", req->method, req->url.path, "HTTP/1.0", req->headers);
 }
 
+void close_routine(void *arg) {
+    int fd = *((int*)arg);
+    close(fd);
+}
+
 void *handle_request(void *arg) {
     int socket_fd = *((int*)arg);
     free(arg);
+
+    pthread_cleanup_push(close_routine, &socket_fd)
 
     if (pthread_detach(pthread_self())) {
         finish_thread("Cannot detach request handler thread. Exiting thread\n");
@@ -140,14 +147,12 @@ void *handle_request(void *arg) {
 
     ssize_t r = read(socket_fd, buffer, MAX_BUFFER_SIZE);
     if (r == -1) {
-        close(socket_fd);
         finish_thread("Cannot read request from client\n");
     }
 
     request_t request;
     init_request(&request);
     if (parse_request(buffer, r, &request) == -1) {
-        close(socket_fd);
         finish_thread("Failed to parse request\n");
     }
 
@@ -156,13 +161,11 @@ void *handle_request(void *arg) {
     printf("%s", buffer);
 
     int server_fd = open_connection(request.url.host);
-
+            pthread_cleanup_push(close_routine, &server_fd)
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
         char err[ERR_MSG_SIZE];
         sprintf(err, "Cannot send request to server: %s\n", request.url.host);
-        close(server_fd);
-        close(socket_fd);
         finish_thread(err);
     }
 
@@ -170,14 +173,13 @@ void *handle_request(void *arg) {
     while ((r = read(server_fd, buffer, sizeof(buffer))) > 0) {
         w = send(socket_fd, buffer, r, MSG_NOSIGNAL);
         if (w == -1) {
-            close(server_fd);
-            close(socket_fd);
             finish_thread("Client closed connection\n");
         }
     }
+            pthread_cleanup_pop(1);
+    pthread_cleanup_pop(1);
 
-    close(server_fd);
-    close(socket_fd);
+    pthread_exit(NULL);
 }
 
 int open_accept_listener(int port) {
