@@ -50,7 +50,7 @@ int open_connection(char *url) {
     }
 
     if (connect(socket_fd, (struct sockaddr *) &target_addr, sizeof(target_addr)) == -1) {
-        char err[256];
+        char err[ERR_MSG_SIZE];
         sprintf(err, "Cannot establish connection with server: %s", url);
         handle_err(err);
     }
@@ -121,7 +121,9 @@ void *handle_request(void *arg) {
         pthread_exit(NULL);
     }
 
-    int socket_fd = (int) arg;
+    int socket_fd = *((int*)arg);
+    free(arg);
+
     char buffer[MAX_BUFFER_SIZE];
     bzero(buffer, sizeof(buffer));
 
@@ -139,7 +141,7 @@ void *handle_request(void *arg) {
 
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
-        char err[256];
+        char err[ERR_MSG_SIZE];
         sprintf(err, "Cannot send request to server: %s", request.url.host);
         handle_err("Cannot send request to server");
     }
@@ -211,8 +213,12 @@ int main() {
             fprintf(stderr, "Failed to accept connection\n");
             continue;
         }
+
+        int *arg = malloc(sizeof(int));
+        *arg = conn;
+
         pthread_t tid;
-        err = pthread_create(&tid, NULL, (void *) handle_request, (void *) conn);
+        err = pthread_create(&tid, NULL, (void *) handle_request, (void *) arg);
         if (err) {
             fprintf(stderr,"Cannot create request handler thread");
             close(conn);

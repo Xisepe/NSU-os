@@ -30,6 +30,7 @@
 #define HTTP_PORT 80
 #define PORT 5555
 
+#define ERR_MSG_SIZE 512
 #define MAX_BUFFER_SIZE 1 << 15
 #define MAX_METHOD_SIZE 32
 #define MAX_HOST_SIZE 256
