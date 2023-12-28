@@ -52,6 +52,7 @@ int open_connection(char *url) {
     if (connect(socket_fd, (struct sockaddr *) &target_addr, sizeof(target_addr)) == -1) {
         char err[ERR_MSG_SIZE];
         sprintf(err, "Cannot establish connection with server: %s", url);
+        close(socket_fd);
         handle_err(err);
     }
     return socket_fd;
@@ -116,19 +117,20 @@ void build_byte_request(request_t *req, char *buf) {
 }
 
 void *handle_request(void *arg) {
+    int socket_fd = *((int*)arg);
+    free(arg);
+
     if (pthread_detach(pthread_self())) {
         fprintf(stderr, "Cannot detach request handler thread. Exiting thread");
         pthread_exit(NULL);
     }
-
-    int socket_fd = *((int*)arg);
-    free(arg);
 
     char buffer[MAX_BUFFER_SIZE];
     bzero(buffer, sizeof(buffer));
 
     ssize_t r = read(socket_fd, buffer, MAX_BUFFER_SIZE);
     if (r == -1) {
+        close(socket_fd);
         handle_err("Cannot read request from client");
     }
     request_t request;
@@ -137,18 +139,26 @@ void *handle_request(void *arg) {
     bzero(buffer, sizeof(buffer));
     build_byte_request(&request, buffer);
     printf("%s", buffer);
+
     int server_fd = open_connection(request.url.host);
 
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
         char err[ERR_MSG_SIZE];
         sprintf(err, "Cannot send request to server: %s", request.url.host);
-        handle_err("Cannot send request to server");
+        close(server_fd);
+        close(socket_fd);
+        handle_err(err);
     }
 
     bzero(buffer, sizeof(buffer));
     while ((r = read(server_fd, buffer, sizeof(buffer))) > 0) {
-        write(socket_fd, buffer, r);
+        w = write(socket_fd, buffer, r);
+        if (w == -1) {
+            close(server_fd);
+            close(socket_fd);
+            handle_err("Cannot send data back to client");
+        }
     }
 
     close(server_fd);
@@ -183,18 +193,17 @@ int open_accept_listener(int port) {
 }
 
 void sig_handler(int sig) {
-    printf("SIGPIPE signal trapped. Exiting thread.");
-    pthread_exit(NULL);
+    if (sig != SIGPIPE){
+        return;
+    }
+    fprintf(stderr,"SIGPIPE signal trapped. Exiting thread.\n");
 }
 
 void setup_signal_handler() {
-    struct sigaction action, old_action;
-
+    struct sigaction action;
     action.sa_handler = sig_handler;
-    sigemptyset(&action.sa_mask); /* block sigs of type being handled */
-    action.sa_flags = SA_RESTART; /* restart syscalls if possible */
-
-    sigaction(SIGPIPE, &action, &old_action);
+//    sigemptyset(&action.sa_mask); /* block sigs of type being handled */
+    sigaction(SIGPIPE, &action, NULL);
 }
 
 
