@@ -202,7 +202,6 @@ void sig_handler(int sig) {
 void setup_signal_handler() {
     struct sigaction action;
     action.sa_handler = sig_handler;
-//    sigemptyset(&action.sa_mask); /* block sigs of type being handled */
     sigaction(SIGPIPE, &action, NULL);
 }
 
