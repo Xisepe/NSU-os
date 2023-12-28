@@ -58,7 +58,7 @@ typedef struct _request_t {
 } request_t;
 
 void init_request(request_t *req);
-void parse_request(char *data, size_t data_size, request_t *request);
+int parse_request(char *data, size_t data_size, request_t *request);
 void parse_request_url(char *data, request_t *request);
 void parse_uri(char *uri, url_t *content);
 void build_byte_request(request_t *req, char *buf);

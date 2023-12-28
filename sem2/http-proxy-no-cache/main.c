@@ -8,6 +8,11 @@ void init_request(request_t *req) {
     bzero(req->url.host, sizeof(req->url.host));
 }
 
+void finish_thread(const char *msg) {
+    fprintf(stderr, "App error: %s. Exiting thread: %d", msg, gettid());
+    pthread_exit(PTHREAD_CANCELED);
+}
+
 void parse_uri(char *uri, url_t *content) {
     char temp[512];
 
@@ -30,11 +35,6 @@ void parse_uri(char *uri, url_t *content) {
 
 }
 
-void handle_err(const char *msg) {
-    fprintf(stderr, "App error: %s. Exiting thread: %d", msg, gettid());
-    pthread_exit(NULL);
-}
-
 int open_connection(char *url) {
     struct sockaddr_in target_addr;
     memset(&target_addr, 0, sizeof(target_addr));
@@ -46,21 +46,27 @@ int open_connection(char *url) {
 
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd == -1) {
-        handle_err("Cannot create socket for target connection");
+        finish_thread("Cannot create socket for target connection\n");
     }
 
     if (connect(socket_fd, (struct sockaddr *) &target_addr, sizeof(target_addr)) == -1) {
         char err[ERR_MSG_SIZE];
-        sprintf(err, "Cannot establish connection with server: %s", url);
+        sprintf(err, "Cannot establish connection with server: %s\n", url);
         close(socket_fd);
-        handle_err(err);
+        finish_thread(err);
     }
     return socket_fd;
 }
 
 ssize_t readline_header(char *data, char *buf) {
+    if (data == NULL || buf == NULL) {
+        return -1;
+    }
     char *cur = data;
     char *end = strstr(cur, CRLF);
+    if (end == NULL) {
+        return -1;
+    }
     ssize_t n = end - cur;
     if (n == 0) {
         return 0;
@@ -76,12 +82,16 @@ void parse_request_url(char *data, request_t *request) {
     parse_uri(tmp, &request->url);
 }
 
-void parse_request(char *data, size_t data_size, request_t *req) {
+int parse_request(char *data, size_t data_size, request_t *req) {
     char buf[MAX_BUFFER_SIZE];
     bzero(buf, MAX_BUFFER_SIZE);
     char *cur = data;
 
     ssize_t read = readline_header(cur, buf);
+    if (read == -1) {
+        return -1;
+    }
+
     cur += read + 2;
     parse_request_url(buf, req);
 
@@ -110,6 +120,7 @@ void parse_request(char *data, size_t data_size, request_t *req) {
     strcat(req->headers, connection_hdr);
     strcat(req->headers, proxy_conn_hdr);
     strcat(req->headers, "\r\n");
+    return 0;
 }
 
 void build_byte_request(request_t *req, char *buf) {
@@ -121,8 +132,7 @@ void *handle_request(void *arg) {
     free(arg);
 
     if (pthread_detach(pthread_self())) {
-        fprintf(stderr, "Cannot detach request handler thread. Exiting thread");
-        pthread_exit(NULL);
+        finish_thread("Cannot detach request handler thread. Exiting thread\n");
     }
 
     char buffer[MAX_BUFFER_SIZE];
@@ -131,11 +141,16 @@ void *handle_request(void *arg) {
     ssize_t r = read(socket_fd, buffer, MAX_BUFFER_SIZE);
     if (r == -1) {
         close(socket_fd);
-        handle_err("Cannot read request from client");
+        finish_thread("Cannot read request from client\n");
     }
+
     request_t request;
     init_request(&request);
-    parse_request(buffer, r, &request);
+    if (parse_request(buffer, r, &request) == -1) {
+        close(socket_fd);
+        finish_thread("Failed to parse request\n");
+    }
+
     bzero(buffer, sizeof(buffer));
     build_byte_request(&request, buffer);
     printf("%s", buffer);
@@ -145,19 +160,19 @@ void *handle_request(void *arg) {
     ssize_t w = write(server_fd, buffer, strlen(buffer));
     if (w == -1) {
         char err[ERR_MSG_SIZE];
-        sprintf(err, "Cannot send request to server: %s", request.url.host);
+        sprintf(err, "Cannot send request to server: %s\n", request.url.host);
         close(server_fd);
         close(socket_fd);
-        handle_err(err);
+        finish_thread(err);
     }
 
     bzero(buffer, sizeof(buffer));
     while ((r = read(server_fd, buffer, sizeof(buffer))) > 0) {
-        w = write(socket_fd, buffer, r);
+        w = send(socket_fd, buffer, r, MSG_NOSIGNAL);
         if (w == -1) {
             close(server_fd);
             close(socket_fd);
-            handle_err("Cannot send data back to client");
+            finish_thread("Client closed connection\n");
         }
     }
 
@@ -192,25 +207,10 @@ int open_accept_listener(int port) {
     return listen_fd;
 }
 
-void sig_handler(int sig) {
-    if (sig != SIGPIPE){
-        return;
-    }
-    fprintf(stderr,"SIGPIPE signal trapped. Exiting thread.\n");
-}
-
-void setup_signal_handler() {
-    struct sigaction action;
-    action.sa_handler = sig_handler;
-    sigaction(SIGPIPE, &action, NULL);
-}
-
-
 int main() {
-    setup_signal_handler();
     int listen_fd = open_accept_listener(PORT);
     if (listen_fd == -1) {
-        handle_err("Cannot create socket to accept connections");
+        finish_thread("Cannot create socket to accept connections\n");
     }
     int err;
     while (1) {
@@ -228,7 +228,7 @@ int main() {
         pthread_t tid;
         err = pthread_create(&tid, NULL, (void *) handle_request, (void *) arg);
         if (err) {
-            fprintf(stderr,"Cannot create request handler thread");
+            fprintf(stderr,"Cannot create request handler thread\n");
             close(conn);
         }
     }
