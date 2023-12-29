@@ -42,6 +42,9 @@ int open_connection(char *url) {
     target_addr.sin_port = htons(HTTP_PORT);
 
     struct hostent *host = gethostbyname(url);
+    if (host == NULL) {
+        finish_thread("Cannot resolve server name\n");
+    }
     memcpy(&target_addr.sin_addr, host->h_addr_list[0], host->h_length);
 
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
